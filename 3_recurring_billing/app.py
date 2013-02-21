@@ -1,53 +1,56 @@
-import urlparse
+import braintree
 
 from flask import Flask, request, render_template
 app = Flask(__name__)
 
-import braintree
-
 braintree.Configuration.configure(braintree.Environment.Sandbox,
-                                  merchant_id="your_merchant_id",
-                                  public_key="your_public_key",
-                                  private_key="your_private_key")
+                                  merchant_id="use_your_merchant_id",
+                                  public_key="use_your_public_key",
+                                  private_key="use_your_private_key")
 
 @app.route("/")
 def form():
-    tr_data = braintree.Customer.tr_data_for_create({},
-                                             "http://localhost:5000/braintree")
-    braintree_url = braintree.TransparentRedirect.url()
-    return render_template("form.html", tr_data=tr_data,
-                           braintree_url=braintree_url)
+    return render_template("braintree.html")
 
-@app.route("/braintree")
-def result():
-    query_string = urlparse.urlparse(request.url).query
-    result = braintree.TransparentRedirect.confirm(query_string)
-    customer_id = None
+@app.route('/create_customer', methods=["POST"])
+def create_customer():
+    result = braintree.Customer.create({
+        "first_name": request.form["first_name"],
+        "last_name": request.form["last_name"],
+        "credit_card": {
+            "billing_address": {
+                "postal_code": request.form["postal_code"]
+            },
+            "number": request.form["number"],
+            "expiration_month": request.form["month"],
+            "expiration_year": request.form["year"],
+            "cvv": request.form["cvv"]
+        }
+    })
     if result.is_success:
-        message = "Customer Created with ID: %s" % result.customer.email
-        customer_id = result.customer.id
+        return """<h1>Customer created with name: {0}</h1>'
+                '<a href="/subscriptions?id={1}">Click here to sign this Customer up for a recurring payment</a>'
+                """.format(result.customer.first_name + " " + result.customer.last_name, result.customer.id)
     else:
-        message = "Errors: %s" % " ".join(error.message for error in
-                                                    result.errors.deep_errors)
-    return render_template("response.html", message=message,
-                           customer_id=customer_id)
+        return "<h1>Error: {0}</h1>".format(result.message)
 
-@app.route("/subscriptions")
+@app.route('/subscriptions')
 def subscriptions():
-    customer_id = request.args["id"]
-    customer = braintree.Customer.find(customer_id)
-    payment_method_token = customer.credit_cards[0].token
-    result = braintree.Subscription.create(
-            {"payment_method_token": payment_method_token,
-             "plan_id": "test_plan_1"})
-    # Start error handling
-    if result.is_success:
-        message = "Subscription status: %s" % result.subscription.status
-    else:
-        message = "Message: %s" % result.message
-    return render_template("subscriptions.html", message=message)
+    try:
+        customer_id = request.args['id']
+        customer = braintree.Customer.find(customer_id)
+        payment_method_token = customer.credit_cards[0].token
 
+        result = braintree.Subscription.create({
+            "payment_method_token": payment_method_token,
+            "plan_id": "test_plan_1"
+        })
+        if result.is_success:
+            return "<h1>Subscription Status {0}</h1>".format(result.subscription.status)
+        else:
+            return "<h1>Error: {0}</h1>".format(result.message)
+    except braintree.exceptions.NotFoundError:
+        return "<h1>No customer found for id: {0}".format(request.args['id'])
 
-# Run the app
-if __name__ == "__main__":
-    app.run()
+if __name__ == '__main__':
+    app.run(debug=True)

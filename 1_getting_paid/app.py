@@ -1,38 +1,35 @@
-import urlparse
+import braintree
 
 from flask import Flask, request, render_template
 app = Flask(__name__)
 
-import braintree
-
 braintree.Configuration.configure(braintree.Environment.Sandbox,
-                                  merchant_id="your_merchant_id",
-                                  public_key="your_public_key",
-                                  private_key="your_private_key")
+                                  merchant_id="use_your_merchant_id",
+                                  public_key="use_your_public_key",
+                                  private_key="use_your_private_key")
 
 @app.route("/")
 def form():
-    tr_data = braintree.Transaction.tr_data_for_sale(
-            {"transaction": {"type": "sale",
-                             "amount": "10",
-                             "options": {"submit_for_settlement": True}}},
-            "http://localhost:5000/braintree")
-    braintree_url = braintree.TransparentRedirect.url()
-    return render_template("form.html", tr_data=tr_data,
-                           braintree_url=braintree_url)
+    return render_template("braintree.html")
 
-@app.route("/braintree")
-def result():
-    query_string = urlparse.urlparse(request.url).query
-    result = braintree.TransparentRedirect.confirm(query_string)
+@app.route("/create_transaction", methods=["POST"])
+def create_transaction():
+    result = braintree.Transaction.sale({
+        "amount": "1000.00",
+        "credit_card": {
+            "number": request.form["number"],
+            "cvv": request.form["cvv"],
+            "expiration_month": request.form["month"],
+            "expiration_year": request.form["year"]
+        },
+        "options": {
+            "submit_for_settlement": True
+        }
+    })
     if result.is_success:
-        message = "Transaction Successful: %s. Amount: %s" % (
-                        result.transaction.status, result.transaction.amount)
+        return "<h1>Success! Transaction ID: {0}</h1>".format(result.transaction.id)
     else:
-        message = "Errors: %s" % " ".join(error.message for error in
-                                                   result.errors.deep_errors)
-    return render_template("response.html", message=message)
+        return "<h1>Error: {0}</h1>".format(result.message)
 
-# Run the app
-if __name__ == "__main__":
-    app.run()
+if __name__ == '__main__':
+    app.run(debug=True)

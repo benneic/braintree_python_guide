@@ -1,34 +1,55 @@
-import urlparse
+import braintree
 
 from flask import Flask, request, render_template
 app = Flask(__name__)
 
-import braintree
-
 braintree.Configuration.configure(braintree.Environment.Sandbox,
-                                  merchant_id="your_merchant_id",
-                                  public_key="your_public_key",
-                                  private_key="your_private_key")
+                                  merchant_id="use_your_merchant_id",
+                                  public_key="use_your_public_key",
+                                  private_key="use_your_private_key")
 
 @app.route("/")
 def form():
-    tr_data = braintree.Customer.tr_data_for_create({},
-                                             "http://localhost:5000/braintree")
-    braintree_url = braintree.TransparentRedirect.url()
-    return render_template("form.html", tr_data=tr_data,
-                           braintree_url=braintree_url)
+    return render_template("braintree.html")
 
-@app.route("/braintree")
-def result():
-    query_string = urlparse.urlparse(request.url).query
-    result = braintree.TransparentRedirect.confirm(query_string)
+@app.route("/create_transaction", methods=["POST"])
+def create_transaction():
+    result = braintree.Transaction.sale({
+        "amount": "1000.00",
+        "credit_card": {
+            "number": request.form["number"],
+            "cvv": request.form["cvv"],
+            "expiration_month": request.form["month"],
+            "expiration_year": request.form["year"]
+        },
+        "options": {
+            "submit_for_settlement": True
+        }
+    })
     if result.is_success:
-        message = "Customer Created with ID: %s" % result.customer.email
+        return "<h1>Transaction Successful</h1>ID: {0}".format(result.transaction.id)
     else:
-        message = "Errors: %s" % " ".join(error.message for error in
-                                                    result.errors.deep_errors)
-    return render_template("response.html", message=message)
+        return "<h1>Transaction Failed</h1>{0}".format(result.message)
 
-# Run the app
-if __name__ == "__main__":
-    app.run()
+@app.route('/create_customer', methods=["POST"])
+def create_customer():
+    result = braintree.Customer.create({
+        "first_name": request.form["first_name"],
+        "last_name": request.form["last_name"],
+        "credit_card": {
+            "billing_address": {
+                "postal_code": request.form["postal_code"]
+            },
+            "number": request.form["number"],
+            "expiration_month": request.form["month"],
+            "expiration_year": request.form["year"],
+            "cvv": request.form["cvv"]
+        }
+    })
+    if result.is_success:
+        return "<h1>Customer created with name: {0}</h1>".format(result.customer.first_name + " " + result.customer.last_name)
+    else:
+        return "<h1>Error: {0}</h1>".format(result.message)
+
+if __name__ == '__main__':
+    app.run(debug=True)
